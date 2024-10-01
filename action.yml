@@ -1,0 +1,109 @@
+name: 'action-docker-build-push'
+description: 'Setup docker, build image and push'
+branding:
+  icon: package
+  color: orange
+
+inputs:
+  registry:
+    description: 'Server address of Docker registry. If not set then will default to Docker Hub'
+    required: false
+  username:
+    description: 'Username used to log against the Docker registry'
+    required: false
+  password:
+    description: 'Password or personal access token used to log against the Docker registry'
+    required: false
+
+  context:
+    description: "Build's context is the set of files located in the specified PATH or URL"
+    required: false
+    default: '.'
+  file:
+    description: "Path to the Dockerfile"
+    required: false
+    default: 'Dockerfile'
+  tags:
+    description: "List of tags"
+    required: true
+  platforms:
+    description: "List of target platforms for build"
+    required: false
+  push:
+    description: "Push is a shorthand for --output=type=registry"
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Proxy env
+      run: |
+        echo "[$(date +'%Y-%m-%d %H:%M:%S')] ⚙️ Set up Proxy env"
+        if [ -n "${{ env.HTTP_PROXY }}" ]; then
+          echo "http_proxy=${{ env.HTTP_PROXY }}" >> $GITHUB_ENV
+        fi
+        if [ -n "${{ env.HTTPS_PROXY }}" ]; then
+          echo "https_proxy=${{ env.HTTPS_PROXY }}" >> $GITHUB_ENV
+        fi
+        if [ -n "${{ env.NO_PROXY }}" ]; then
+          echo "no_proxy=${{ env.NO_PROXY }}" >> $GITHUB_ENV
+        fi
+        echo "http_proxy=${{ env.http_proxy }}"
+        echo "https_proxy=${{ env.https_proxy }}"
+        echo "no_proxy=${{ env.no_proxy }}"
+
+    - name: echo Set up QEMU
+      run: echo -e "\n[$(date +'%Y-%m-%d %H:%M:%S')] ⚙️ Set up QEMU"
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
+    - name: echo Set up Docker BuildX
+      run: echo -e "\n[$(date +'%Y-%m-%d %H:%M:%S')] ⚙️ Set up Docker BuildX"
+
+    - name: Set up Docker BuildX
+      uses: docker/setup-buildx-action@v3
+      with:
+        driver-opts: |
+          env.http_proxy=${{ env.http_proxy }}
+          env.https_proxy=${{ env.https_proxy }}
+          "env.no_proxy='${{ env.no_proxy }}'"
+
+    - name: echo Login to DockerHub
+      run: echo -e "\n[$(date +'%Y-%m-%d %H:%M:%S')] ⚙️ Login to DockerHub"
+      if: ${{ inputs.username != '' }}
+
+    - name: Login to DockerHub
+      uses: docker/login-action@v3
+      if: ${{ inputs.username != '' }}
+      with:
+        registry: ${{ inputs.registry }}
+        username: ${{ inputs.username }}
+        password: ${{ inputs.password }}
+
+    - name: echo Cache docker build
+      run: echo -e "\n[$(date +'%Y-%m-%d %H:%M:%S')] ⚙️ Cache docker build"
+
+    - name: Cache docker build
+      uses: actions/cache@v3
+      with:
+        path: /opt/docker-cache/.build-cache
+        key: ${{ runner.os }}-docker-build-cache
+
+    - name: echo Build and push
+      run: echo -e "\n[$(date +'%Y-%m-%d %H:%M:%S')] ⚙️ Build and push"
+
+    - name: Build and push
+      uses: docker/build-push-action@v4
+      with:
+        context: ${{ inputs.context }}
+        file: ${{ inputs.file }}
+        platforms: ${{ inputs.platforms }}
+        push: ${{ inputs.push }}
+        tags: ${{ inputs.tags }}
+        cache-from: type=local,src=/opt/docker-cache/.build-cache
+        cache-to: type=local,dest=/opt/docker-cache/.build-cache,mode=max
+        build-args: |
+            "http_proxy='${{ env.http_proxy }}'"
+            "https_proxy='${{ env.https_proxy }}'"
