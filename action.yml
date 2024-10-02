@@ -24,10 +24,13 @@ inputs:
     required: false
     default: 'Dockerfile'
   tags:
-    description: "List of tags"
-    required: true
+    description: "List/CSV of tags"
+    required: false
+  labels:
+    description: "List of labels"
+    required: false
   platforms:
-    description: "List of target platforms for build"
+    description: "List/CSV of target platforms for build"
     required: false
   push:
     description: "Push is a shorthand for --output=type=registry"
@@ -94,6 +97,28 @@ runs:
     - name: echo Build and push
       run: echo -e "\n[$(date +'%Y-%m-%d %H:%M:%S')] ⚙️ Build and push"
 
+    - name: Get docker meta
+      id: meta
+      run: |
+        if [ -n "${{ inputs.tags }}" ]; then
+          echo TAGS=$(echo "${{ inputs.tags }}" | tr '\n' ',' | sed 's/,$//') >> $GITHUB_OUTPUT
+        else
+          REPO_NAME=$(echo ${GITHUB_REPOSITORY} | awk -F"/" '{print $2}')
+          REPO_VERSION=$(echo ${{ github.ref }} | awk -F"/" '{print $3}' | awk -F"v" '{print (NF>1) ? $2 : $1}')
+          if [ -n "${{ inputs.registry }}" ]; then
+            TAGS="${{ inputs.registry }}/${{ inputs.username }}/$REPO_NAME:latest"
+            echo "TAGS=$TAGS,${{ inputs.registry }}/${{ inputs.username }}/$REPO_NAME:$REPO_VERSION" >> $GITHUB_OUTPUT
+          else
+            TAGS="${{ inputs.username }}/$REPO_NAME:latest"
+            echo "TAGS=$TAGS,${{ inputs.username }}/$REPO_NAME:$REPO_VERSION" >> $GITHUB_OUTPUT
+          fi
+        fi
+
+    - name: echo Get docker meta
+      run: |
+        echo -e "\n[$(date +'%Y-%m-%d %H:%M:%S')] ⚙️ Get docker meta"
+        echo TAGS=${{ steps.meta.outputs.TAGS }}
+
     - name: Build and push
       uses: docker/build-push-action@v4
       with:
@@ -101,7 +126,8 @@ runs:
         file: ${{ inputs.file }}
         platforms: ${{ inputs.platforms }}
         push: ${{ inputs.push }}
-        tags: ${{ inputs.tags }}
+        tags: ${{ steps.meta.outputs.TAGS }}
+        labels: ${{ inputs.labels }}
         cache-from: type=local,src=/opt/docker-cache/.build-cache
         cache-to: type=local,dest=/opt/docker-cache/.build-cache,mode=max
         build-args: |
